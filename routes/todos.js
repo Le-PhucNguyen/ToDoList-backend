@@ -1,93 +1,40 @@
 const express = require('express');
 const router = express.Router();
-const Todo = require('../models/Todo'); // Import the Todo model
+const Todo = require('../models/Todo');
 const { authenticateToken } = require('./auth');
 
 // Get todos for the logged-in user
 router.get('/todos', authenticateToken, async (req, res) => {
     try {
-      const { search, completed, page = 1, limit = 10 } = req.query;
-  
-      const query = { userId: req.user.id };
-      if (search) query.task = { $regex: search, $options: 'i' };
-      if (completed !== undefined) query.completed = completed === 'true';
-  
-      const skip = (page - 1) * limit;
-      const todos = await Todo.find(query).skip(skip).limit(Number(limit));
-      const totalTodos = await Todo.countDocuments(query);
-  
-      res.json({ todos, totalTodos, currentPage: page, totalPages: Math.ceil(totalTodos / limit) });
-    } catch (err) {
-      res.status(500).json({ message: err.message });
-    }
-  });
-  
-  // Create a todo for the logged-in user
-  router.post('/todos', authenticateToken, async (req, res) => {
-    try {
-      const todo = new Todo({
-        task: req.body.task,
-        completed: req.body.completed || false,
-        userId: req.user.id,
-      });
-  
-      const newTodo = await todo.save();
-      res.status(201).json(newTodo);
-    } catch (err) {
-      res.status(400).json({ message: err.message });
-    }
-  });
+        const { search, completed, page = 1, limit = 10 } = req.query;
 
-// Get all todos with search, filter, and pagination
-router.get('/todos', async (req, res) => {
-    try {
-        const { search = '', completed, page = 1, limit = 10 } = req.query;
+        const query = { userId: req.user.id };
+        if (search) query.task = { $regex: search, $options: 'i' };
+        if (completed !== undefined) query.completed = completed === 'true';
 
-        // Build query object
-        const query = {};
-        if (search) {
-            query.task = { $regex: search, $options: 'i' }; // Case-insensitive search
-        }
-        if (completed !== undefined) {
-            query.completed = completed === 'true'; // Convert string to boolean
-        }
-
-        // Pagination
         const skip = (page - 1) * limit;
-
-        // Fetch data with query, pagination, and sorting
         const todos = await Todo.find(query).skip(skip).limit(Number(limit));
-        const totalTodos = await Todo.countDocuments(query); // Total number of matching todos
+        const totalTodos = await Todo.countDocuments(query);
 
-        res.json({
-            todos,
-            totalTodos,
-            currentPage: Number(page),
-            totalPages: Math.ceil(totalTodos / limit),
-        });
+        res.json({ todos, totalTodos, currentPage: page, totalPages: Math.ceil(totalTodos / limit) });
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
 });
 
-// Create a new todo
-router.post('/todos', async (req, res) => {
-    const { task, completed = false } = req.body;
-
-    if (!task || typeof task !== 'string') {
-        return res.status(400).json({ message: 'Task is required and must be a string' });
-    }
-
+// Create a todo for the logged-in user
+router.post('/todos', authenticateToken, async (req, res) => {
     try {
         const todo = new Todo({
-            task,
-            completed,
+            task: req.body.task,
+            completed: req.body.completed || false,
+            userId: req.user.id,
         });
 
         const newTodo = await todo.save();
         res.status(201).json(newTodo);
     } catch (err) {
-        res.status(500).json({ message: 'Error creating todo', error: err.message });
+        res.status(400).json({ message: err.message });
     }
 });
 
@@ -130,6 +77,26 @@ router.delete('/todos/:id', async (req, res) => {
         res.json({ message: 'Todo deleted successfully' });
     } catch (err) {
         res.status(500).json({ message: 'Error deleting todo', error: err.message });
+    }
+});
+
+// Delete multiple todos
+router.delete('/todos', async (req, res) => {
+    try {
+        const { ids } = req.body;
+
+        if (!Array.isArray(ids) || ids.length === 0) {
+            return res.status(400).json({ message: 'Invalid request, "ids" must be a non-empty array' });
+        }
+
+        const result = await Todo.deleteMany({ _id: { $in: ids } });
+
+        res.json({
+            message: `${result.deletedCount} todos deleted successfully`,
+            deletedCount: result.deletedCount,
+        });
+    } catch (err) {
+        res.status(500).json({ message: 'Error deleting todos', error: err.message });
     }
 });
 
