@@ -15,6 +15,10 @@ const authRoutes = require('./routes/auth');
 app.use('/api/auth', authRoutes.router);
 
 
+app.get('/', (req,res)=>{
+  return res.send("hehe")
+})
+
 // MongoDB Connection
 mongoose.connect('mongodb://localhost:27017/todo-app', {
   useNewUrlParser: true,
