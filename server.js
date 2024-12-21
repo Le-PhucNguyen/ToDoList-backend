@@ -7,7 +7,14 @@ const PORT = process.env.PORT || 5000;
 
 // Apply CORS middleware
 app.use(cors({
-  origin: 'http://localhost:3000', // Or your frontend's deployment URL
+  origin: function (origin, callback) {
+    const allowedOrigins = ['http://localhost:3000', 'http://192.168.1.6:3000']; // Add all allowed origins here
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   credentials: true, // Include if using cookies or authentication headers
 }));
