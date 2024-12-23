@@ -126,4 +126,27 @@ router.delete('/', authenticateToken, async (req, res) => {
     }
 });
 
+// Undo soft delete a todo
+router.patch('/undo-delete/:id', authenticateToken, async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const todo = await Todo.findOne({ _id: id, userId: req.user.id });
+        if (!todo) {
+            return res.status(404).json({ message: 'Todo not found' });
+        }
+
+        if (!todo.isDeleted) {
+            return res.status(400).json({ message: 'Todo is not marked as deleted' });
+        }
+
+        todo.isDeleted = false;
+        await todo.save();
+
+        res.json({ message: 'Todo restored successfully', todo });
+    } catch (err) {
+        res.status(500).json({ message: 'Error restoring todo', error: err.message });
+    }
+});
+
 module.exports = router;
