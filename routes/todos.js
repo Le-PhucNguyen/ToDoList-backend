@@ -8,7 +8,7 @@ router.get('/', authenticateToken, async (req, res) => {
     try {
         const { search, completed, page = 1, limit = 10 } = req.query;
 
-        const query = { userId: req.user.id, isDeleted: false };
+        const query = { userId: req.user.id, isDeleted: false }; // Exclude soft-deleted todos
         if (search) query.task = { $regex: search, $options: 'i' };
         if (completed !== undefined) query.completed = completed === 'true';
 
@@ -32,7 +32,7 @@ router.post('/', authenticateToken, async (req, res) => {
     try {
         const { task, completed } = req.body;
 
-        if (!task || typeof task !== 'string') {
+        if (!task || typeof task !== 'string' || task.trim() === '') {
             return res.status(400).json({ message: 'Invalid "task" field. It must be a non-empty string.' });
         }
 
@@ -56,8 +56,8 @@ router.put('/:id', authenticateToken, async (req, res) => {
         const { id } = req.params;
         const { task, completed } = req.body;
 
-        if (task && typeof task !== 'string') {
-            return res.status(400).json({ message: 'Invalid "task" field. It must be a string.' });
+        if (task && (typeof task !== 'string' || task.trim() === '')) {
+            return res.status(400).json({ message: 'Invalid "task" field. It must be a non-empty string.' });
         }
 
         const todo = await Todo.findOne({ _id: id, userId: req.user.id, isDeleted: false });
@@ -65,7 +65,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
             return res.status(404).json({ message: 'Todo not found or has been deleted' });
         }
 
-        if (task) todo.task = task;
+        if (task) todo.task = task.trim();
         if (completed !== undefined) todo.completed = completed;
 
         const updatedTodo = await todo.save();
