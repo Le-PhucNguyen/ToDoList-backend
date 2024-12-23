@@ -15,10 +15,9 @@ app.use(cors({
       callback(new Error('Not allowed by CORS'));
     }
   },
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'], // Added PATCH method here
   credentials: true, // Include if using cookies or authentication headers
 }));
-
 
 // Parse incoming JSON requests
 app.use(express.json());
