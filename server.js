@@ -8,7 +8,7 @@ const PORT = process.env.PORT || 5000;
 // Apply CORS middleware
 app.use(cors({
   origin: function (origin, callback) {
-    const allowedOrigins = ['http://localhost:3000', 'http://192.168.1.6:3000']; // Add all allowed origins here
+    const allowedOrigins = ['http://192.168.1.3:3000', 'http://localhost:3000']; // Add all allowed origins here
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
