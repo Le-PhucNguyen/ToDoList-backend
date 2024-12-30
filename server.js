@@ -1,6 +1,7 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
+require('dotenv').config(); // Load environment variables
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -8,14 +9,15 @@ const PORT = process.env.PORT || 5000;
 // Apply CORS middleware
 app.use(cors({
   origin: function (origin, callback) {
-    const allowedOrigins = ['http://192.168.1.3:3000', 'http://localhost:3000']; // Add all allowed origins here
+    const allowedOrigins = ['http://192.168.1.7:3000', 'http://localhost:3000']; // Add all allowed origins here
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      callback(new Error('Not allowed by CORS'));
+      console.error(`CORS error: Origin ${origin} not allowed`);
+      callback(new Error('CORS policy: Not allowed by CORS'));
     }
   },
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'], // Added PATCH method here
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'], // Ensure all used methods are allowed
   credentials: true, // Include if using cookies or authentication headers
 }));
 
@@ -30,14 +32,28 @@ const authRoutes = require('./routes/auth');
 app.use('/api/auth', authRoutes.router);
 
 // Connect to MongoDB
-mongoose.connect('mongodb://localhost:27017/todo-app', {
+mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/todo-app', {
   useNewUrlParser: true,
   useUnifiedTopology: true,
+}).then(() => {
+  console.log('Connected to MongoDB');
+}).catch((error) => {
+  console.error('Error connecting to MongoDB:', error.message);
 });
 
-const db = mongoose.connection;
-db.on('error', (error) => console.error('MongoDB connection error:', error));
-db.once('open', () => console.log('Connected to MongoDB'));
+// Handle 404 errors for undefined routes
+app.use((req, res, next) => {
+  res.status(404).json({ message: 'Route not found' });
+});
+
+// Global error handler
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(err.status || 500).json({
+    success: false,
+    message: err.message || 'Internal Server Error',
+  });
+});
 
 // Start the server
 app.listen(PORT, () => {

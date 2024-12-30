@@ -19,18 +19,18 @@ router.post('/register', limiter, async (req, res) => {
     const { username, password } = req.body;
 
     if (!username || !password) {
-      return res.status(400).json({ message: 'Username and password are required' });
+      return res.status(400).json({ success: false, message: 'Username and password are required' });
     }
     if (username.length < 3) {
-      return res.status(400).json({ message: 'Username must be at least 3 characters long' });
+      return res.status(400).json({ success: false, message: 'Username must be at least 3 characters long' });
     }
     if (password.length < 6) {
-      return res.status(400).json({ message: 'Password must be at least 6 characters long' });
+      return res.status(400).json({ success: false, message: 'Password must be at least 6 characters long' });
     }
 
     const existingUser = await User.findOne({ username });
     if (existingUser) {
-      return res.status(400).json({ message: 'Username already exists' });
+      return res.status(400).json({ success: false, message: 'Username already exists' });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -50,21 +50,21 @@ router.post('/login', limiter, async (req, res) => {
     const { username, password } = req.body;
 
     if (!username || !password) {
-      return res.status(400).json({ message: 'Username and password are required' });
+      return res.status(400).json({ success: false, message: 'Username and password are required' });
     }
 
     const user = await User.findOne({ username });
     if (!user) {
-      return res.status(401).json({ message: 'Invalid credentials' });
+      return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
 
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
-      return res.status(401).json({ message: 'Invalid credentials' });
+      return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
 
     const token = jwt.sign({ id: user._id }, SECRET_KEY, { expiresIn: '1h' });
-    res.json({ success: true, token });
+    res.json({ success: true, message: 'Login successful', token, expiresIn: '1h' });
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false, message: 'Error logging in' });
@@ -75,25 +75,41 @@ router.post('/login', limiter, async (req, res) => {
 const authenticateToken = (req, res, next) => {
   const authHeader = req.header('Authorization');
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ message: 'Access denied. Invalid token format' });
+    return res.status(401).json({ success: false, message: 'Access denied. Invalid token format' });
   }
 
   const token = authHeader.split(' ')[1];
   jwt.verify(token, SECRET_KEY, (err, user) => {
     if (err) {
-      return res.status(403).json({ message: 'Invalid or expired token' });
+      return res.status(403).json({ success: false, message: 'Invalid or expired token' });
     }
     req.user = user;
     next();
   });
 };
 
+// Validate token
+router.post('/validate-token', async (req, res) => {
+  const token = req.body.token || req.header('Authorization')?.split(' ')[1];
+
+  if (!token) {
+    return res.status(400).json({ success: false, message: 'Token is required' });
+  }
+
+  jwt.verify(token, SECRET_KEY, (err, user) => {
+    if (err) {
+      return res.status(401).json({ success: false, message: 'Invalid or expired token' });
+    }
+    res.status(200).json({ success: true, message: 'Token is valid', user });
+  });
+});
+
 // Get user profile
 router.get('/profile', authenticateToken, async (req, res) => {
   try {
     const user = await User.findById(req.user.id).select('-password');
     if (!user) {
-      return res.status(404).json({ message: 'User not found' });
+      return res.status(404).json({ success: false, message: 'User not found' });
     }
     res.json({ success: true, user });
   } catch (err) {
@@ -119,7 +135,7 @@ router.put('/profile', authenticateToken, async (req, res) => {
     ).select('-password');
 
     if (!user) {
-      return res.status(404).json({ message: 'User not found' });
+      return res.status(404).json({ success: false, message: 'User not found' });
     }
 
     res.json({ success: true, user });
