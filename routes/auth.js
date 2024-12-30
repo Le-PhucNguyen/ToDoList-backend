@@ -1,6 +1,7 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
+const nodemailer = require('nodemailer');
 const User = require('../models/User');
 const router = express.Router();
 const rateLimit = require('express-rate-limit');
@@ -13,13 +14,23 @@ const limiter = rateLimit({
   message: { message: 'Too many requests, please try again later' },
 });
 
+// Random password generator function
+const generateRandomPassword = (length = 12) => {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_+';
+  let password = '';
+  for (let i = 0; i < length; i++) {
+    password += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return password;
+};
+
 // Register a new user
 router.post('/register', limiter, async (req, res) => {
   try {
-    const { username, password } = req.body;
+    const { username, password, email } = req.body;
 
-    if (!username || !password) {
-      return res.status(400).json({ success: false, message: 'Username and password are required' });
+    if (!username || !password || !email) {
+      return res.status(400).json({ success: false, message: 'Username, email, and password are required' });
     }
     if (username.length < 3) {
       return res.status(400).json({ success: false, message: 'Username must be at least 3 characters long' });
@@ -33,8 +44,13 @@ router.post('/register', limiter, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Username already exists' });
     }
 
+    const existingEmail = await User.findOne({ email });
+    if (existingEmail) {
+      return res.status(400).json({ success: false, message: 'Email already registered' });
+    }
+
     const hashedPassword = await bcrypt.hash(password, 10);
-    const user = new User({ username, password: hashedPassword });
+    const user = new User({ username, password: hashedPassword, email });
     await user.save();
 
     res.status(201).json({ success: true, message: 'User registered successfully' });
@@ -68,6 +84,50 @@ router.post('/login', limiter, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false, message: 'Error logging in' });
+  }
+});
+
+// Forgot Password Route
+router.post('/forgot-password', limiter, async (req, res) => {
+  const { email } = req.body;
+
+  try {
+    // Check if the user exists by email
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'Email not found' });
+    }
+
+    // Generate a new random password
+    const newPassword = generateRandomPassword();
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // Update user's password in the database
+    user.password = hashedPassword;
+    await user.save();
+
+    // Send the new password via email
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: 'your_email@gmail.com', // Replace with your Gmail address
+        pass: 'your_email_password', // Replace with your Gmail password or App Password
+      },
+    });
+
+    const mailOptions = {
+      from: 'your_email@gmail.com',
+      to: email,
+      subject: 'Password Reset Request',
+      text: `Your new password is: ${newPassword}`,
+    };
+
+    await transporter.sendMail(mailOptions);
+
+    res.status(200).json({ success: true, message: 'New password sent to your email address' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: 'Error processing password reset request' });
   }
 });
 
