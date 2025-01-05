@@ -2,6 +2,8 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 const nodemailer = require('nodemailer');
+const multer = require('multer');
+const path = require('path');
 const User = require('../models/User');
 const router = express.Router();
 const rateLimit = require('express-rate-limit');
@@ -23,6 +25,29 @@ const generateRandomPassword = (length = 12) => {
   }
   return password;
 };
+
+// Configure multer for local file storage
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, path.join(__dirname, '../uploads/avatars')); // Save files in uploads/avatars
+  },
+  filename: (req, file, cb) => {
+    cb(null, `${Date.now()}-${file.originalname}`); // Unique filename with timestamp
+  },
+});
+
+const upload = multer({
+  storage,
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = /jpeg|jpg|png|jfif/; // Added jfif support
+    const isValidType = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    if (isValidType) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only .jpeg, .jpg, .png, and .jfif files are allowed')); // Updated error message
+    }
+  },
+});
 
 // Register a new user
 router.post('/register', limiter, async (req, res) => {
@@ -91,22 +116,26 @@ router.post('/login', limiter, async (req, res) => {
 router.post('/forgot-password', limiter, async (req, res) => {
   const { email } = req.body;
 
+  if (!email) {
+    return res.status(400).json({ success: false, message: 'Email is required' });
+  }
+
   try {
-    // Check if the user exists by email
+    // Find user by email
     const user = await User.findOne({ email });
     if (!user) {
       return res.status(404).json({ success: false, message: 'Email not found' });
     }
 
-    // Generate a new random password
+    // Generate new random password
     const newPassword = generateRandomPassword();
     const hashedPassword = await bcrypt.hash(newPassword, 10);
 
-    // Update user's password in the database
+    // Update user's password
     user.password = hashedPassword;
     await user.save();
 
-    // Send the new password via email
+    // Configure nodemailer transporter
     const transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: {
@@ -115,6 +144,7 @@ router.post('/forgot-password', limiter, async (req, res) => {
       },
     });
 
+    // Send email with new password
     const mailOptions = {
       from: 'your_email@gmail.com',
       to: email,
@@ -126,16 +156,17 @@ router.post('/forgot-password', limiter, async (req, res) => {
 
     res.status(200).json({ success: true, message: 'New password sent to your email address' });
   } catch (error) {
-    console.error(error);
+    console.error('Error in /forgot-password:', error);
     res.status(500).json({ success: false, message: 'Error processing password reset request' });
   }
 });
 
-// Middleware to verify token
+// Middleware to authenticate token
 const authenticateToken = (req, res, next) => {
-  const authHeader = req.header('Authorization');
+  const authHeader = req.headers['authorization'];
+
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ success: false, message: 'Access denied. Invalid token format' });
+    return res.status(401).json({ success: false, message: 'Unauthorized: Missing or invalid token' });
   }
 
   const token = authHeader.split(' ')[1];
@@ -178,15 +209,18 @@ router.get('/profile', authenticateToken, async (req, res) => {
   }
 });
 
-// Update user profile
-router.put('/profile', authenticateToken, async (req, res) => {
+// Update user profile (including avatar upload)
+router.put('/profile', authenticateToken, upload.single('avatar'), async (req, res) => {
   try {
-    const { bio, avatar } = req.body;
-
-    // Update only allowed profile fields
+    const { bio } = req.body;
     const updatedFields = {};
+
     if (bio !== undefined) updatedFields['profile.bio'] = bio;
-    if (avatar !== undefined) updatedFields['profile.avatar'] = avatar;
+
+    // Handle avatar upload
+    if (req.file) {
+      updatedFields['profile.avatar'] = `/uploads/avatars/${req.file.filename}`;
+    }
 
     const user = await User.findByIdAndUpdate(
       req.user.id,

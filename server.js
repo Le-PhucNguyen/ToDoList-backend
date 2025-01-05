@@ -1,6 +1,7 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
+const path = require('path'); // Added for serving static files
 require('dotenv').config(); // Load environment variables
 
 const app = express();
@@ -23,6 +24,9 @@ app.use(cors({
 
 // Parse incoming JSON requests
 app.use(express.json());
+
+// Serve uploaded files (avatars) statically
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Import and use routes
 const todoRoutes = require('./routes/todos');
