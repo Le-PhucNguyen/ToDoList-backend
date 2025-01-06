@@ -4,16 +4,27 @@ const bcrypt = require('bcrypt');
 const nodemailer = require('nodemailer');
 const multer = require('multer');
 const path = require('path');
+const winston = require('winston');
 const User = require('../models/User');
 const router = express.Router();
 const rateLimit = require('express-rate-limit');
 const SECRET_KEY = process.env.JWT_SECRET || 'your-secret-key';
+
+// Logger for error handling
+const logger = winston.createLogger({
+  level: 'error',
+  format: winston.format.json(),
+  transports: [
+    new winston.transports.File({ filename: 'error.log' }),
+  ],
+});
 
 // Rate limiter for authentication routes
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // Limit each IP to 100 requests per windowMs
   message: { message: 'Too many requests, please try again later' },
+  skip: (req) => req.path === '/auth/validate-token', // Skip specific route
 });
 
 // Random password generator function
@@ -44,7 +55,7 @@ const upload = multer({
     if (isValidType) {
       cb(null, true);
     } else {
-      cb(new Error('Only .jpeg, .jpg, .png, and .jfif files are allowed')); // Updated error message
+      cb(new Error('Only .jpeg, .jpg, .png, and .jfif files are allowed'));
     }
   },
 });
@@ -75,12 +86,20 @@ router.post('/register', limiter, async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const user = new User({ username, password: hashedPassword, email });
+    const user = new User({
+      username,
+      password: hashedPassword,
+      email,
+      profile: {
+        bio: '',
+        avatar: '/uploads/avatars/default-avatar.png', // Default avatar
+      },
+    });
     await user.save();
 
     res.status(201).json({ success: true, message: 'User registered successfully' });
   } catch (err) {
-    console.error(err);
+    logger.error(err.message, { stack: err.stack });
     res.status(500).json({ success: false, message: 'Error registering user' });
   }
 });
@@ -107,7 +126,7 @@ router.post('/login', limiter, async (req, res) => {
     const token = jwt.sign({ id: user._id }, SECRET_KEY, { expiresIn: '1h' });
     res.json({ success: true, message: 'Login successful', token, expiresIn: '1h' });
   } catch (err) {
-    console.error(err);
+    logger.error(err.message, { stack: err.stack });
     res.status(500).json({ success: false, message: 'Error logging in' });
   }
 });
@@ -121,32 +140,27 @@ router.post('/forgot-password', limiter, async (req, res) => {
   }
 
   try {
-    // Find user by email
     const user = await User.findOne({ email });
     if (!user) {
       return res.status(404).json({ success: false, message: 'Email not found' });
     }
 
-    // Generate new random password
     const newPassword = generateRandomPassword();
     const hashedPassword = await bcrypt.hash(newPassword, 10);
 
-    // Update user's password
     user.password = hashedPassword;
     await user.save();
 
-    // Configure nodemailer transporter
     const transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: {
-        user: 'your_email@gmail.com', // Replace with your Gmail address
-        pass: 'your_email_password', // Replace with your Gmail password or App Password
+        user: process.env.EMAIL_USER, // Environment variable
+        pass: process.env.EMAIL_PASS, // Environment variable
       },
     });
 
-    // Send email with new password
     const mailOptions = {
-      from: 'your_email@gmail.com',
+      from: process.env.EMAIL_USER,
       to: email,
       subject: 'Password Reset Request',
       text: `Your new password is: ${newPassword}`,
@@ -156,7 +170,7 @@ router.post('/forgot-password', limiter, async (req, res) => {
 
     res.status(200).json({ success: true, message: 'New password sent to your email address' });
   } catch (error) {
-    console.error('Error in /forgot-password:', error);
+    logger.error(error.message, { stack: error.stack });
     res.status(500).json({ success: false, message: 'Error processing password reset request' });
   }
 });
@@ -179,6 +193,44 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
+// Change Password Route
+router.put('/change-password', authenticateToken, async (req, res) => {
+  const { currentPassword, newPassword, confirmNewPassword } = req.body;
+
+  if (!currentPassword || !newPassword || !confirmNewPassword) {
+    return res.status(400).json({ success: false, message: 'All fields are required' });
+  }
+
+  if (newPassword !== confirmNewPassword) {
+    return res.status(400).json({ success: false, message: 'New passwords do not match' });
+  }
+
+  try {
+    const user = await User.findById(req.user.id);
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const isPasswordValid = await bcrypt.compare(currentPassword, user.password);
+    if (!isPasswordValid) {
+      return res.status(401).json({ success: false, message: 'Current password is incorrect' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ success: false, message: 'New password must be at least 6 characters long' });
+    }
+
+    user.password = await bcrypt.hash(newPassword, 10);
+    await user.save();
+
+    res.status(200).json({ success: true, message: 'Password updated successfully' });
+  } catch (err) {
+    logger.error(err.message, { stack: err.stack });
+    res.status(500).json({ success: false, message: 'Error updating password' });
+  }
+});
+
 // Validate token
 router.post('/validate-token', async (req, res) => {
   const token = req.body.token || req.header('Authorization')?.split(' ')[1];
@@ -187,11 +239,22 @@ router.post('/validate-token', async (req, res) => {
     return res.status(400).json({ success: false, message: 'Token is required' });
   }
 
-  jwt.verify(token, SECRET_KEY, (err, user) => {
+  jwt.verify(token, SECRET_KEY, async (err, decoded) => {
     if (err) {
       return res.status(401).json({ success: false, message: 'Invalid or expired token' });
     }
-    res.status(200).json({ success: true, message: 'Token is valid', user });
+
+    try {
+      const user = await User.findById(decoded.id).select('-password');
+      if (!user) {
+        return res.status(404).json({ success: false, message: 'User not found' });
+      }
+
+      res.status(200).json({ success: true, message: 'Token is valid', user });
+    } catch (error) {
+      logger.error(error.message, { stack: error.stack });
+      res.status(500).json({ success: false, message: 'Error validating token' });
+    }
   });
 });
 
@@ -204,20 +267,26 @@ router.get('/profile', authenticateToken, async (req, res) => {
     }
     res.json({ success: true, user });
   } catch (err) {
-    console.error(err);
+    logger.error(err.message, { stack: err.stack });
     res.status(500).json({ success: false, message: 'Error retrieving user profile' });
   }
 });
 
 // Update user profile (including avatar upload)
-router.put('/profile', authenticateToken, upload.single('avatar'), async (req, res) => {
+router.put('/profile', authenticateToken, (req, res, next) => {
+  upload.single('avatar')(req, res, (err) => {
+    if (err instanceof multer.MulterError || err.message) {
+      return res.status(400).json({ success: false, message: err.message });
+    }
+    next();
+  });
+}, async (req, res) => {
   try {
     const { bio } = req.body;
     const updatedFields = {};
 
     if (bio !== undefined) updatedFields['profile.bio'] = bio;
 
-    // Handle avatar upload
     if (req.file) {
       updatedFields['profile.avatar'] = `/uploads/avatars/${req.file.filename}`;
     }
@@ -234,7 +303,7 @@ router.put('/profile', authenticateToken, upload.single('avatar'), async (req, r
 
     res.json({ success: true, user });
   } catch (err) {
-    console.error(err);
+    logger.error(err.message, { stack: err.stack });
     res.status(500).json({ success: false, message: 'Error updating user profile' });
   }
 });
