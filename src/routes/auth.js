@@ -275,7 +275,7 @@ router.get('/profile', authenticateToken, async (req, res) => {
 // Update user profile (including avatar upload)
 router.put('/profile', authenticateToken, (req, res, next) => {
   upload.single('avatar')(req, res, (err) => {
-    if (err instanceof multer.MulterError || err.message) {
+    if (err && (err instanceof multer.MulterError || err.message)) {
       return res.status(400).json({ success: false, message: err.message });
     }
     next();
