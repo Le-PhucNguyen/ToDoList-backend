@@ -3,3 +3,6 @@ node_modules/
 
 # Ignore environment variables
 .env
+
+# Ignore Picture upload for avatars
+upload/avatars
