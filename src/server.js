@@ -36,7 +36,7 @@ const authRoutes = require('./routes/auth');
 app.use('/api/auth', authRoutes.router);
 
 // Connect to MongoDB
-mongoose.connect(process.env.MONGO_URI || 'mongodb+srv://nguyenlp:16012004@todoappdatabase.fid4v.mongodb.net/todo-app', {
+mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/todo-app', {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 }).then(() => {

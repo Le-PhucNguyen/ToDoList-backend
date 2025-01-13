@@ -3,14 +3,13 @@ const router = express.Router();
 const Todo = require('../models/Todo');
 const { authenticateToken } = require('./auth');
 
-
 // Fetch todos with filters, pagination, and soft delete exclusion
 router.get('/', authenticateToken, async (req, res) => {
     try {
         const { search, completed, page = 1, limit = 10 } = req.query;
 
         const query = { userId: req.user.id, isDeleted: false }; // Exclude soft-deleted todos
-        if (search) query.task = { $regex: search, $options: 'i' };
+        if (search) query.task = { $regex: search, $options: 'i' }; // Case-insensitive search
         if (completed !== undefined) query.completed = completed === 'true';
 
         const skip = (page - 1) * limit;

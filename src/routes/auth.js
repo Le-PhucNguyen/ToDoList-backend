@@ -140,8 +140,11 @@ router.post('/forgot-password', limiter, async (req, res) => {
   }
 
   try {
+    console.log('Processing password reset for email:', email);
+
     const user = await User.findOne({ email });
     if (!user) {
+      console.log('Email not found in the database');
       return res.status(404).json({ success: false, message: 'Email not found' });
     }
 
@@ -154,22 +157,29 @@ router.post('/forgot-password', limiter, async (req, res) => {
     const transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: {
-        user: process.env.EMAIL_USER, // Environment variable
-        pass: process.env.EMAIL_PASS, // Environment variable
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS,
       },
     });
 
     const mailOptions = {
-      from: process.env.EMAIL_USER,
+      from: `"Your App Name" <${process.env.EMAIL_USER}>`,
       to: email,
       subject: 'Password Reset Request',
-      text: `Your new password is: ${newPassword}`,
+      html: `
+        <p>Your new password is:</p>
+        <p><b>${newPassword}</b></p>
+        <p>Please log in and change your password immediately.</p>
+      `,
     };
 
     await transporter.sendMail(mailOptions);
 
+    console.log('Password reset email sent to:', email);
+
     res.status(200).json({ success: true, message: 'New password sent to your email address' });
   } catch (error) {
+    console.error('Error during password reset:', error);
     logger.error(error.message, { stack: error.stack });
     res.status(500).json({ success: false, message: 'Error processing password reset request' });
   }
@@ -304,7 +314,7 @@ router.put('/profile', authenticateToken, (req, res, next) => {
     res.json({ success: true, user });
   } catch (err) {
     logger.error(err.message, { stack: err.stack });
-    res.status(500).json({ success: false, message: 'Error updating user profile' });
+    res.status(500).json({ success: false, message: 'Error updating profile' });
   }
 });
 
